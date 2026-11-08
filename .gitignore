@@ -1,0 +1,39 @@
+# Planning, specs, tickets, and agent docs
+.scratch/
+docs/
+AGENTS.md
+CLAUDE.md
+GLOSSARY.md
+GLOSSARY-MAP.md
+
+# Python bytecode & packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments & test caches
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime state & SQLite databases
+*.db
+*.db-wal
+*.db-shm
+hidden_files/
+plugin-data/
+
+# OS & editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

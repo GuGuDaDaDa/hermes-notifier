@@ -1,0 +1,84 @@
+name: proactive
+version: 0.1.0
+description: Muse-style three-stage proactive notification pipeline for Hermes.
+author: Aier
+license: MIT
+manifest_version: 2
+api_version: 1
+kind: standalone
+provides_tools:
+  - proactivity_read
+  - proactivity_select
+  - tracking_manage
+provides_hooks: []
+config_schema:
+  active_window:
+    type: string
+    label: Active window
+    description: Local daily window in which proactive runs may wake the agent (HH:MM-HH:MM).
+    default: "09:00-21:30"
+  timezone:
+    type: string
+    label: Timezone
+    description: IANA timezone for the active window and user-facing times. "auto" follows the host timezone (config.yaml `timezone` or HERMES_TIMEZONE); server-local time is used when the host has none.
+    default: "auto"
+  preferences_file:
+    type: string
+    label: Preferences file
+    description: Markdown file containing this profile's proactive voice and non-interference preferences. Relative paths resolve under HERMES_HOME.
+    default: "PROACTIVE_PREFERENCES.md"
+  delivery_platform:
+    type: string
+    label: Delivery platform
+    description: Platform used as the Cron delivery origin. "auto" follows the first human platform already recorded by an existing Cron job, then the host channel directory.
+    default: "auto"
+  cron_schedule:
+    type: string
+    label: Cron schedule
+    description: Cron expression installed by `setup-cron`, evaluated in the configured timezone.
+    default: "30 9,12,15,18,21 * * *"
+  retention_days:
+    type: integer
+    label: Snapshot retention (days)
+    description: Snapshot directories older than this are removed during a tick.
+    default: 14
+  max_message_chars:
+    type: integer
+    label: Max message characters
+    description: Maximum characters kept from any single conversation message.
+    default: 1500
+  max_earlier_chars:
+    type: integer
+    label: Max earlier context characters
+    description: Maximum total characters kept from earlier conversation context.
+    default: 20000
+  worker_timeout_seconds:
+    type: integer
+    label: Worker timeout (seconds)
+    description: Maximum seconds to wait for each research worker LLM completion.
+    default: 120
+  log_level:
+    type: string
+    label: Log level
+    description: Verbosity of proactive run logs (DEBUG, INFO, WARNING, ERROR). Invalid values fall back to INFO.
+    default: "INFO"
+  memory_source:
+    type: string
+    label: Memory source
+    description: Memory backend read during Stage 1 (auto, builtin, none, or an installed provider name). auto follows this profile's memory.provider.
+    default: "auto"
+  memory_limit:
+    type: integer
+    label: Memory result limit
+    description: Maximum memory entries included in the Stage 1 snapshot.
+    default: 5
+  memory_timeout_seconds:
+    type: number
+    label: Memory read timeout (seconds)
+    description: Maximum seconds Stage 1 waits for an external memory provider's initialize and query.
+    default: 3
+  memory_tool:
+    type: string
+    label: Memory search tool
+    description: Optional external provider tool name used for structured memory search; blank uses the provider's prefetch.
+    default: ""
