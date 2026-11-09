@@ -2,30 +2,20 @@
 
 # hermes-notifier
 
-**专为 Hermes Agent 设计的低底噪、三阶段主动提醒与事项追踪插件**
+**Hermes Agent 主动提醒与事项追踪插件**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Hermes Manifest: v2](https://img.shields.io/badge/Hermes_Manifest-v2-black.svg)](#)
-[![Tests: Passing](https://img.shields.io/badge/Tests-104_passed-success.svg)](#)
 
 </div>
 
 ---
 
-## 这是什么
+## 简介
 
-`hermes-notifier`（插件标识 `proactive`）是专为 Hermes Agent 打造的后台主动提醒与事项推进引擎。它在用户跨端（IM、Desktop、CLI、TUI）的日常交互中捕获未闭环事项，并在合适时机主动跟进。
+`hermes-notifier`（插件标识 `proactive`）是受[Muse](https://muse.ai/)的主动提醒功能启发，专为 Hermes Agent 打造的后台主动提醒与事项推进引擎。它在用户跨端（IM、Desktop、CLI、TUI）的日常交互中捕获未闭环事项，并在合适时机主动跟进并通知用户。
 
-通过确定性快照预检、分片只读调研与编辑门复核的分层流水线，插件在不污染模型长期记忆、不产生空转 Token 消耗的前提下，让 Agent 具备可靠的时效洞察与事项闭环能力。
-
-## 为什么需要它
-
-传统的 Agent 主动提醒方案普遍面临两难：
-
-1. **空转成本高**：定时唤醒整个 Agent 上下文会产生大量无意义的 LLM 调用和高额 Token 账单；
-2. **打扰多且不可靠**：缺乏严格的事项准入与防撞机制，容易反复提醒用户早已处理的事情，甚至与现有定时任务冲突或自我回环。
-
-`hermes-notifier` 借鉴 Muse 的生产实践，用三层确定性门控解决这组矛盾：没有新变化时 0 Token 毫秒级退出；发现候选时分片调研并由主 Agent 逐条复核；发送失败自动回滚重审，确保提醒精准、安静、不遗漏。
+`hermes-notifier` 借鉴 Muse 的生产实践，采用后台进程对候选事件调研并由主 Agent 逐条复核；发送失败自动回滚重审，确保提醒精准、安静、不遗漏。`hermes-notifier`可以在不污染模型长期记忆，让 Agent 具备可靠的时效洞察与事项闭环能力。
 
 ## 快速开始
 
@@ -54,15 +44,9 @@ hermes proactive setup-cron
 hermes proactive status
 ```
 
-## 你会得到什么
-
-- **零空转与零干扰（Zero Idle Cost）**：在静默时段、无新对话或无待办候选时，预检脚本直接短路退出，不唤醒主 Agent，无 LLM 计费；系统自动过滤自身消息与超过 12 行的代码块，杜绝上下文膨胀与自激循环。
-- **两阶段水位提交（Two-Phase Checkpoint）**：事项从捕获到最终投递实行版本化控制。只有主 Agent 在编辑门逐条核实并通过决策后，检查点才推进为已提交；网络波动或中断自动回退重审，消息绝不静默丢失。
-- **事项宽进严出（Broad In, Strict Out）**：后台 Worker 仅允许记录与推进活跃待办，严禁私自篡改或关闭事项；只有用户在对话中明确确认，或主 Agent 在编辑门核查事实后，方可完成办结。
-
 ## 工作方式
 
-流水线采用分层漏斗设计，层层阻断噪音：
+`hermes-notifier`采用采用三阶段构建候选时间的筛选与通知发送：
 
 1. **Stage 1 确定性快照构建**：纯 Python 执行（0 Token）。检查活跃时间窗（默认 09:00–21:30），提取对话差分与待办状态；无增量时直接短路退出。
 2. **Stage 2 分片只读调研**：轻量 Worker 分片分析对话增量与时效节点，汇总候选证据包；若无可提醒事项，直接提交检查点并静默退出。
@@ -102,14 +86,12 @@ hermes proactive tick --force
 
 ## 偏好与防打扰
 
-插件遵循“先偏好、后行动”原则，通过配置文件定义 Agent 的行为边界：
+你可以通过配置文件定义 Agent 的行为边界：
 
 - **自然语言偏好（`<HERMES_HOME>/PROACTIVE_PREFERENCES.md`）**：定义活跃时间窗、语气风格（如克制、简洁）、合并发送规则以及不干扰特定已有 Cron 任务的约束。
 - **参数化配置（Desktop Settings / `config.yaml`）**：在 Hermes Desktop 的 **Settings → Plugins → proactive** 中可调整 `active_window`、`timezone`、`retention_days`（快照保留天数，默认 14 天）、`memory_source` 等运行参数。
 
 ## 开发与验证
-
-项目包含严密的单元测试套件，涵盖时区计算、状态机回滚、数据注入防御与端到端流水线：
 
 ```bash
 # 运行完整自动化测试（104 个用例）
