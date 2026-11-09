@@ -2,6 +2,8 @@
 
 # hermes-notifier
 
+![hermes-notifier](./docs/hermes-notifier.svg)
+
 **Hermes Agent 主动提醒与事项追踪插件**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)

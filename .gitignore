@@ -1,6 +1,6 @@
 # Planning, specs, tickets, and agent docs
 .scratch/
-docs/
+docs/.agents/
 AGENTS.md
 CLAUDE.md
 GLOSSARY.md
