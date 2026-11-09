@@ -25,8 +25,7 @@
 
 ```bash
 # 挂载到 Hermes 插件目录（推荐软链以便同步更新）
-mkdir -p ~/.hermes/plugins
-ln -sfn "$(pwd)/plugins/proactive" ~/.hermes/plugins/proactive
+hermes plugins install https://github.com/GuGuDaDaDa/hermes-notifier/tree/main/plugins/proactive
 
 # 启用插件并运行契约校验
 hermes plugins enable proactive
