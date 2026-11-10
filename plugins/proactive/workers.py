@@ -20,35 +20,27 @@ DEFAULT_WORKER_TIMEOUT_SECONDS = 120.0
 SOURCE_RE = re.compile(r"\[source:(\d+)\]")
 _HOST_LLM: Any = None
 
-WORKER1_INSTRUCTIONS = """\
-You are the conversation follow-up research worker for a proactive notifier.
-Read only the supplied conversation, active tracking, scheduled Cron, and
-non-interference rules. Identify unresolved commitments, external blockers, and
-time anchors that deserve a follow-up.
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
-Rules:
-- Never close, reopen, or edit a closed tracking item.
-- New tracking items must be active and must have a clear future anchor, external
-  blocker, or explicit user commitment.
-- Existing active items may have their title, description, summary, and momentum
-  updated conservatively.
-- Do not propose items already covered by a healthy scheduled Cron job.
-- Every candidate must cite one or more [source:N] markers from the supplied text.
-- Return JSON only, matching the requested schema.
-"""
 
-WORKER2_INSTRUCTIONS = """\
-You are the time-sensitivity and prepared-draft research worker for a proactive
-notifier. Read only the supplied updated tracking, memories, runtime context, and
-recent proactive delivery ledger. Propose deadline, state-change, and broken-Cron
-candidates. Do not re-scan raw conversation turns.
+def _load_prompt(name: str) -> str:
+    """Load one static worker instruction file verbatim.
 
-Rules:
-- Every candidate must include a short, natural initial draft.
-- Do not duplicate covered healthy scheduled Cron jobs.
-- Every candidate must cite one or more [source:N] markers from the supplied text.
-- Return JSON only, matching the requested schema.
-"""
+    Reading at import time makes a missing or empty prompt fail during plugin
+    registration instead of silently degrading candidate quality at run time.
+    """
+    path = PROMPTS_DIR / f"{name}.md"
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(f"proactive prompt file missing: {path}") from exc
+    if not text:
+        raise RuntimeError(f"proactive prompt file is empty: {path}")
+    return text
+
+
+WORKER1_INSTRUCTIONS = _load_prompt("worker1")
+WORKER2_INSTRUCTIONS = _load_prompt("worker2")
 
 
 class WorkerOutputError(ValueError):

@@ -73,6 +73,13 @@ use that file as the source of truth instead of maintaining a job list here.
 
 Treat a job as covered when it is enabled and healthy. A failing or disabled job may be mentioned as an
 anomaly, but its schedule and definition remain owned by the Cron runtime.
+
+## Interrupted workflows and inquiries
+
+- Low-frequency, gentle proactive check-ins are allowed for important technical plans or inquiries that
+  were set aside, forgotten, or left unfinished mid-conversation.
+- Keep every check-in restrained and light: confirm whether to continue or drop the thread, and never
+  manufacture urgency or press the user.
 """
 
 FENCED_CODE_RE = re.compile(r"```(?:[^\n]*)\n(.*?)\n```", re.DOTALL)
