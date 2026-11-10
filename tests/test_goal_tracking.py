@@ -136,7 +136,7 @@ class GoalTrackingTestCase(unittest.TestCase):
 
         manifest = yaml.safe_load((PLUGIN_DIR / "plugin.yaml").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "proactive")
-        self.assertEqual(manifest["version"], "0.1.1")
+        self.assertEqual(manifest["version"], "0.1.2")
         self.assertEqual(
             manifest["description"],
             "Muse-style three-stage proactive notification pipeline for Hermes.",
