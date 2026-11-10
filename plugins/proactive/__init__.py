@@ -6,7 +6,7 @@ from pathlib import Path
 
 from hermes_constants import get_hermes_home
 
-from . import cli, log, snapshot, storage, workers
+from . import bridge, cli, log, snapshot, storage, workers
 from .cli import handle_cli, handle_slash, setup_cli
 from .schemas import (
     PROACTIVITY_READ_SCHEMA,

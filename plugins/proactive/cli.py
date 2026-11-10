@@ -21,181 +21,31 @@ DEFAULT_CRON_SCHEDULE = "30 9,12,15,18,21 * * *"
 CRON_SKILLS = ["proactive:editorial-gate"]
 CRON_TOOLSETS = ["proactivity", "session_search", "file"]
 BRIDGE_FILENAME = "proactive-tick.py"
-
-BRIDGE_TEMPLATE = '''#!/usr/bin/env python3
-"""Run the proactive Stage 1 and Stage 2 pipeline for the Hermes Cron wake gate."""
-
-from __future__ import annotations
-
-import importlib.util
-import logging
-import os
-import sys
-import time
-from pathlib import Path
+BRIDGE_STUB_PATH = Path(__file__).resolve().parent / "assets" / BRIDGE_FILENAME
+FALLBACK_DIR_SENTINEL = 'FALLBACK_PLUGIN_DIR = ""  # @PROACTIVE_PLUGIN_DIR@'
 
 
-LOGGER_NAME = "proactive.bridge"
-MAX_FIELD_CHARS = 96
-MAX_TRACE_FRAMES = 8
-
-
-def _setup_host_logging(home: Path) -> None:
-    """Initialize the host's cron file handlers before the plugin is loaded.
-
-    setup_logging is idempotent and owns levels, rotation and retention; without
-    it this child process would drop every Stage 1 and Stage 2 record.
-    """
+def _load_bridge_template() -> str:
+    """Load the pre-run bridge stub verbatim; fail loudly when missing or malformed."""
     try:
-        from hermes_logging import setup_logging
-
-        setup_logging(hermes_home=home, mode="cron")
-    except Exception:
-        # Observability must never alter the wake gate, stdout or the exit code.
-        pass
-
-
-def _configured_level(home: Path) -> str:
-    try:
-        import hermes_yaml as yaml
-
-        payload = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
-        entry = (((payload.get("plugins") or {}).get("entries") or {}).get("proactive")) or {}
-        settings = entry.get("settings", entry.get("config", {})) or {}
-        value = str(settings.get("log_level") or "").strip().upper()
-    except Exception:
-        return "INFO"
-    return value if value in {"DEBUG", "INFO", "WARNING", "ERROR"} else "INFO"
-
-
-def _apply_log_level(home: Path) -> None:
-    """Apply the plugin's configured verbosity without touching host handlers."""
-    try:
-        logging.getLogger("proactive").setLevel(getattr(logging, _configured_level(home)))
-    except Exception:
-        pass
-
-
-def _field(value) -> str:
-    try:
-        text = "" if value is None else str(value)
-    except Exception:
-        return "-"
-    text = "".join(" " if (not char.isprintable() or char in "\\r\\n\\t") else char for char in text)
-    if len(text) > MAX_FIELD_CHARS:
-        text = text[:MAX_FIELD_CHARS] + "..."
-    return text or "-"
-
-
-def _stack(exc) -> str:
-    """Describe an exception by file, function and line only — never its text."""
-    try:
-        frames = []
-        tb = exc.__traceback__
-        while tb is not None:
-            frames.append(tb)
-            tb = tb.tb_next
-        parts = []
-        for frame in frames[-MAX_TRACE_FRAMES:]:
-            code = frame.tb_frame.f_code
-            parts.append(f"{Path(code.co_filename).name}:{code.co_name}:{frame.tb_lineno}")
-        return ",".join(parts) or "-"
-    except Exception:
-        return "-"
-
-
-def _emit(logger, level, event, **fields) -> None:
-    try:
-        parts = [f"event={_field(event)}"]
-        for key, value in fields.items():
-            if value is not None:
-                parts.append(f"{key}={_field(value)}")
-        logger.log(level, "%s", " ".join(parts))
-    except Exception:
-        pass
-
-
-def _load_plugin():
-    home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")).expanduser().resolve()
-    candidates = [
-        Path(os.environ["PROACTIVE_PLUGIN_DIR"]) if os.environ.get("PROACTIVE_PLUGIN_DIR") else None,
-        home / "plugins" / "proactive",
-        Path(__PLUGIN_DIR__),
-    ]
-    for candidate in candidates:
-        if candidate is None:
-            continue
-        init_file = candidate / "__init__.py"
-        if init_file.is_file():
-            resolved_dir = init_file.resolve().parent
-            sys.path.insert(0, str(resolved_dir.parent.parent))
-            spec = importlib.util.spec_from_file_location(
-                "proactive_runtime_bridge",
-                resolved_dir / "__init__.py",
-                submodule_search_locations=[str(resolved_dir)],
-            )
-            if spec is None or spec.loader is None:
-                continue
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-            return module, resolved_dir
-    raise RuntimeError("proactive plugin not found; run 'hermes proactive setup-cron' again")
-
-
-def main() -> int:
-    home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")).expanduser().resolve()
-    _setup_host_logging(home)
-    _apply_log_level(home)
-    logger = logging.getLogger(LOGGER_NAME)
-    started = time.monotonic()
-    _emit(logger, logging.INFO, "bridge.start", stage="bridge", mode="cron", hermes_home=home)
-    try:
-        module, plugin_dir = _load_plugin()
-    except Exception as exc:
-        _emit(
-            logger,
-            logging.ERROR,
-            "bridge.failed",
-            stage="bridge",
-            phase="plugin_load",
-            error_type=type(exc).__name__,
-            error_stack=_stack(exc),
-            duration_ms=int((time.monotonic() - started) * 1000),
+        text = BRIDGE_STUB_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"proactive bridge stub missing: {BRIDGE_STUB_PATH}") from exc
+    if not text.strip():
+        raise RuntimeError(f"proactive bridge stub is empty: {BRIDGE_STUB_PATH}")
+    if text.count(FALLBACK_DIR_SENTINEL) != 1:
+        raise RuntimeError(
+            f"proactive bridge stub must contain fallback marker once: {BRIDGE_STUB_PATH}"
         )
-        raise
-    _emit(logger, logging.INFO, "bridge.plugin_selected", stage="bridge", plugin_dir=plugin_dir)
     try:
-        module.configure_logging(str(home))
-    except Exception:
-        pass
-    try:
-        module.snapshot.run_tick(hermes_home=str(home))
-    except Exception as exc:
-        _emit(
-            logger,
-            logging.ERROR,
-            "bridge.failed",
-            stage="bridge",
-            phase="pipeline",
-            error_type=type(exc).__name__,
-            error_stack=_stack(exc),
-            duration_ms=int((time.monotonic() - started) * 1000),
-        )
-        raise
-    _emit(
-        logger,
-        logging.INFO,
-        "bridge.finished",
-        stage="bridge",
-        duration_ms=int((time.monotonic() - started) * 1000),
-    )
-    return 0
+        compile(text, str(BRIDGE_STUB_PATH), "exec")
+    except SyntaxError as exc:
+        raise RuntimeError(f"proactive bridge stub has invalid syntax: {BRIDGE_STUB_PATH}") from exc
+    return text
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-'''
+# Validate the asset at import time so incomplete plugin installs fail during registration.
+_load_bridge_template()
 
 HELP_TEXT = """\
 /proactive — proactive tracking and snapshot controls
@@ -330,7 +180,9 @@ def _delivery_origin(home: Path, platform: str = "auto") -> dict[str, Any] | Non
 
 
 def _bridge_script(plugin_dir: Path) -> str:
-    return BRIDGE_TEMPLATE.replace("__PLUGIN_DIR__", repr(str(plugin_dir)))
+    template = _load_bridge_template()
+    replacement = f"FALLBACK_PLUGIN_DIR = {repr(str(plugin_dir))}"
+    return template.replace(FALLBACK_DIR_SENTINEL, replacement, 1)
 
 
 def _install_bridge(home: Path) -> Path:

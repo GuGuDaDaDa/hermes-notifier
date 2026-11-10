@@ -1096,9 +1096,72 @@ class RunLoggingTestCase(unittest.TestCase):
     def test_generated_bridge_initializes_host_cron_logging_before_plugin_load(self):
         bridge = self._install_bridge()
         text = bridge.read_text(encoding="utf-8")
+        compile(text, str(bridge), "exec")
         self.assertIn("from hermes_logging import setup_logging", text)
         self.assertIn('setup_logging(hermes_home=home, mode="cron")', text)
-        self.assertIn("run_tick(", text)
+        self.assertIn("run_bridge(", text)
+        self.assertNotIn("run_tick(", text)
+
+    def _assert_bridge_plugin_load_failed(self, bridge: Path, plugin_dir: Path, canary: str | None = None) -> None:
+        result = self._run_bridge(
+            bridge, env_overrides={"PROACTIVE_PLUGIN_DIR": str(plugin_dir)}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        agent_log = (self.home / "logs" / "agent.log").read_text(encoding="utf-8")
+        self.assertIn("event=bridge.start", agent_log)
+        self.assertIn("event=bridge.failed", agent_log)
+        self.assertIn("phase=plugin_load", agent_log)
+        self.assertIn("error_type=RuntimeError", agent_log)
+        if canary is not None:
+            self.assertNotIn(canary, agent_log)
+
+    def test_bridge_stub_asset_is_valid_python_and_missing_asset_fails_at_import(self):
+        stub_asset = PLUGIN_DIR / "assets" / "proactive-tick.py"
+        self.assertTrue(stub_asset.is_file())
+        compile(stub_asset.read_text(encoding="utf-8"), str(stub_asset), "exec")
+
+        broken_copy = self.home / "missing-assets-plugin"
+        shutil.copytree(
+            PLUGIN_DIR, broken_copy, ignore=shutil.ignore_patterns("__pycache__", "assets")
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import importlib.util, sys; "
+                    f"spec = importlib.util.spec_from_file_location('missing_assets_test', {str(broken_copy / '__init__.py')!r}, "
+                    f"submodule_search_locations=[{str(broken_copy)!r}]); "
+                    "mod = importlib.util.module_from_spec(spec); "
+                    "sys.modules[spec.name] = mod; "
+                    "spec.loader.exec_module(mod)"
+                ),
+            ],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RuntimeError", result.stderr)
+        self.assertIn("proactive-tick.py", result.stderr)
+
+    def test_bridge_loader_rejects_broken_syntax_or_duplicate_marker(self):
+        for label, bad_body in (
+            ("syntax", 'FALLBACK_PLUGIN_DIR = ""  # @PROACTIVE_PLUGIN_DIR@\ndef broken(\n'),
+            (
+                "duplicate_marker",
+                'FALLBACK_PLUGIN_DIR = ""  # @PROACTIVE_PLUGIN_DIR@\n'
+                'FALLBACK_PLUGIN_DIR = ""  # @PROACTIVE_PLUGIN_DIR@\n',
+            ),
+        ):
+            with self.subTest(label=label):
+                bad_stub = self.home / f"bad-{label}.py"
+                bad_stub.write_text(bad_body, encoding="utf-8")
+                with mock.patch.object(self.plugin.cli, "BRIDGE_STUB_PATH", bad_stub):
+                    with self.assertRaises(RuntimeError):
+                        self.plugin.cli._load_bridge_template()
 
     def test_bridge_logs_success_to_host_files_and_keeps_stdout_protocol(self):
         bridge = self._install_bridge()
@@ -1128,17 +1191,7 @@ class RunLoggingTestCase(unittest.TestCase):
         (broken / "__init__.py").write_text(
             'raise RuntimeError("CANARY-plugin-load")\n', encoding="utf-8"
         )
-        result = self._run_bridge(
-            bridge, env_overrides={"PROACTIVE_PLUGIN_DIR": str(broken)}
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "")
-        agent_log = (self.home / "logs" / "agent.log").read_text(encoding="utf-8")
-        self.assertIn("event=bridge.start", agent_log)
-        self.assertIn("event=bridge.failed", agent_log)
-        self.assertIn("phase=plugin_load", agent_log)
-        self.assertIn("error_type=RuntimeError", agent_log)
-        self.assertNotIn("CANARY-plugin-load", agent_log)
+        self._assert_bridge_plugin_load_failed(bridge, broken, canary="CANARY-plugin-load")
 
     def test_bridge_distinguishes_pipeline_failure_and_logs_it(self):
         bridge = self._install_bridge()
@@ -1163,6 +1216,46 @@ class RunLoggingTestCase(unittest.TestCase):
         self.assertIn("error_type=RuntimeError", agent_log)
         self.assertNotIn("CANARY-pipeline-failure", agent_log)
         self.assertNotIn("event=bridge.finished", agent_log)
+
+    def test_bridge_prefers_home_plugin_install_over_fallback_path(self):
+        bridge = self._install_bridge()
+        installed_plugin = self.home / "plugins" / "proactive"
+        shutil.copytree(
+            PLUGIN_DIR, installed_plugin, ignore=shutil.ignore_patterns("__pycache__")
+        )
+        self._write_plugin_settings({"active_window": self._quiet_active_window()})
+        result = self._run_bridge(bridge, env_overrides={"PROACTIVE_PLUGIN_DIR": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '{"wakeAgent": false}\n')
+        agent_log = (self.home / "logs" / "agent.log").read_text(encoding="utf-8")
+        self.assertIn(f"plugin_dir={installed_plugin.resolve()}", agent_log)
+        self.assertIn("event=bridge.finished", agent_log)
+
+    def test_bridge_logs_missing_bridge_entrypoint_as_plugin_load_failure(self):
+        bridge = self._install_bridge()
+        incomplete = self.home / "no-bridge-plugin"
+        incomplete.mkdir()
+        (incomplete / "__init__.py").write_text("# missing bridge module\n", encoding="utf-8")
+        self._assert_bridge_plugin_load_failed(bridge, incomplete)
+
+    def test_bridge_respects_configured_error_log_level(self):
+        bridge = self._install_bridge()
+        self._write_plugin_settings(
+            {"active_window": self._quiet_active_window(), "log_level": "ERROR"}
+        )
+        result = self._run_bridge(bridge, env_overrides={"PROACTIVE_PLUGIN_DIR": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '{"wakeAgent": false}\n')
+        agent_log_path = self.home / "logs" / "agent.log"
+        agent_log = agent_log_path.read_text(encoding="utf-8") if agent_log_path.is_file() else ""
+        for suppressed in (
+            "event=bridge.start",
+            "event=bridge.plugin_selected",
+            "event=bridge.finished",
+            "event=stage1.start",
+            "event=stage1.quiet_hours",
+        ):
+            self.assertNotIn(suppressed, agent_log)
 
     # Event helper, field whitelist, and level configuration.
 

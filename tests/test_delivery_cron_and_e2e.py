@@ -517,7 +517,8 @@ class DeliveryCronAndEndToEndTestCase(unittest.TestCase):
         self.assertEqual(bridge.stat().st_mode & 0o777, 0o755)
         bridge_text = bridge.read_text(encoding="utf-8")
         self.assertTrue(bridge_text.startswith("#!"))
-        self.assertIn("run_tick(", bridge_text)
+        compile(bridge_text, str(bridge), "exec")
+        self.assertIn("run_bridge(", bridge_text)
 
         jobs = self._read_cron_jobs()
         proactive = [job for job in jobs if job.get("name") == "proactive_notifier"]
