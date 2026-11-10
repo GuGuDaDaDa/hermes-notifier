@@ -1,5 +1,5 @@
 name: proactive
-version: 0.1.0
+version: 0.1.1
 description: Muse-style three-stage proactive notification pipeline for Hermes.
 author: Aier
 license: MIT
