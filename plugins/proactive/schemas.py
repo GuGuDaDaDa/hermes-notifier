@@ -100,9 +100,11 @@ PROACTIVITY_SELECT_SCHEMA = {
 TRACKING_MANAGE_SCHEMA = {
     "name": "tracking_manage",
     "description": (
-        "List, inspect, create, update, close, or reopen durable proactive tracking items. "
-        "Use close only after the item is verified complete; use add, update, or upsert for "
-        "new or active items."
+        "Quietly list, inspect, create, update, close, or reopen background proactive tracking "
+        "items. Use close only when an item is verified complete or explicitly dropped by the "
+        "user; for paused or deferred topics, use update or upsert (momentum_status='waiting' "
+        "or 'stalled') instead of close. Never expose internal fields (goal_id, status, "
+        "closed/active, momentum_status) or recite unrelated tracked items in replies to the user."
     ),
     "parameters": {
         "type": "object",

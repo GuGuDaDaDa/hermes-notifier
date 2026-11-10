@@ -77,6 +77,7 @@ class RecordingContext:
         self.cli_commands = []
         self.commands = []
         self.skills = []
+        self.prompt_sections = []
 
     def register_tool(self, **kwargs):
         self.tools.append(kwargs)
@@ -89,6 +90,11 @@ class RecordingContext:
 
     def register_skill(self, name, path, description=""):
         self.skills.append({"name": name, "path": path, "description": description})
+
+    def register_system_prompt_section(self, id, content, *, position="after_memory", max_chars=4000):
+        self.prompt_sections.append(
+            {"id": id, "content": content, "position": position, "max_chars": max_chars}
+        )
 
 
 class GoalTrackingTestCase(unittest.TestCase):
@@ -196,6 +202,41 @@ class GoalTrackingTestCase(unittest.TestCase):
         self.assertIs(ctx.cli_commands[0]["handler_fn"], self.cli.handle_cli)
         self.assertEqual([entry["name"] for entry in ctx.commands], ["proactive"])
         self.assertIs(ctx.commands[0]["handler"], self.cli.handle_slash)
+
+    def test_register_adds_conversational_prompt_section_and_tolerates_minimal_contexts(self):
+        ctx = RecordingContext()
+        self.plugin.register(ctx)
+
+        self.assertEqual(len(ctx.prompt_sections), 1)
+        section = ctx.prompt_sections[0]
+        self.assertEqual(section["id"], "proactive-conversation")
+        self.assertEqual(section["position"], "after_memory")
+        content = section["content"]
+        self.assertTrue(callable(content))
+        self.assertEqual(content({"platform": "cron"}), "")
+        self.assertEqual(content({"platform": "subagent"}), "")
+
+        for platform in ("feishu", "desktop", "cli", ""):
+            rendered = content({"platform": platform})
+            self.assertIsInstance(rendered, str)
+            self.assertLessEqual(len(rendered), 4000)
+            for token in (
+                "tracking_manage",
+                "terminal",
+                "waiting",
+                "stalled",
+                "goal_id",
+                "status",
+                "closed",
+                "active",
+                "momentum_status",
+            ):
+                self.assertIn(token, rendered)
+
+        minimal = RecordingContext()
+        with mock.patch.object(minimal, "register_system_prompt_section", None):
+            self.plugin.register(minimal)
+        self.assertEqual(len(minimal.tools), 3)
 
     def test_register_forwards_host_llm_and_explicit_clients_win(self):
         host_llm = object()
@@ -375,6 +416,15 @@ class GoalTrackingTestCase(unittest.TestCase):
         action_enum = self.plugin.schemas.TRACKING_MANAGE_SCHEMA["parameters"]["properties"]["action"]["enum"]
         self.assertIn("add", action_enum)
         self.assertIn("update", action_enum)
+
+    def test_tracking_manage_schema_guides_quiet_user_replies_and_drop_closures(self):
+        description = self.plugin.schemas.TRACKING_MANAGE_SCHEMA["description"]
+        self.assertIn("dropped", description)
+        self.assertIn("waiting", description)
+        self.assertIn("stalled", description)
+        for hidden_label in ("goal_id", "status", "closed", "active", "momentum_status"):
+            self.assertIn(hidden_label, description)
+        self.assertIn("unrelated", description)
 
     def test_timestamps_advance_on_every_modification(self):
         self.storage.init_db()

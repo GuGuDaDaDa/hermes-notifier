@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Mapping
 
 from hermes_constants import get_hermes_home
 
@@ -21,6 +22,26 @@ from .tools import (
 
 
 SKILL_PATH = Path(__file__).resolve().parent / "skills" / "editorial-gate" / "SKILL.md"
+CONVERSATION_PROMPT_SECTION_ID = "proactive-conversation"
+CONVERSATION_PROMPT_SECTION = (
+    "Proactive follow-ups are a quiet background notebook. When a user completes or "
+    "explicitly drops a topic in conversation, close only that topic quietly via "
+    "`tracking_manage`; when they pause or defer it, update it with `momentum_status` "
+    "(`waiting` or `stalled`) instead of closing. Fetch `tracking_manage` via "
+    "`tool_search`/`tool_describe`/`tool_call` if deferred — never invoke `terminal`, "
+    "shell CLIs, or direct SQLite commands to inspect or modify tracking state. Reply "
+    "naturally in one short sentence matching the user's language, without echoing internal "
+    "fields (`goal_id`, `status`, `closed`, `active`, `momentum_status`), pipeline "
+    "mechanics, reminder-suppression notices, or unrelated items still being tracked."
+)
+
+
+def _conversation_prompt_section(session_info: Mapping[str, Any]) -> str:
+    """Keep chat-reply rules out of Cron and other non-human runtime sessions."""
+    platform = str((session_info or {}).get("platform") or "").strip().lower()
+    if platform in snapshot.NON_HUMAN_SESSION_SURFACES:
+        return ""
+    return CONVERSATION_PROMPT_SECTION
 
 
 def configure_logging(hermes_home: str | Path | None = None) -> str:
@@ -77,7 +98,7 @@ def register(ctx) -> None:
         toolset="proactivity",
         schema=TRACKING_MANAGE_SCHEMA,
         handler=handle_tracking_manage,
-        description="Manage durable proactive tracking items.",
+        description="Quietly manage background proactive tracking items.",
         emoji="🎯",
     )
     ctx.register_skill(
@@ -85,6 +106,13 @@ def register(ctx) -> None:
         path=SKILL_PATH,
         description="Review a pending proactive edition and decide every candidate before delivery.",
     )
+    register_prompt_section = getattr(ctx, "register_system_prompt_section", None)
+    if callable(register_prompt_section):
+        register_prompt_section(
+            id=CONVERSATION_PROMPT_SECTION_ID,
+            content=_conversation_prompt_section,
+            position="after_memory",
+        )
     ctx.register_cli_command(
         name="proactive",
         help="Manage proactive tracking items",
