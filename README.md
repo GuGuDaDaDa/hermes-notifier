@@ -2,7 +2,9 @@
 
 # hermes-notifier
 
-![hermes-notifier](./docs/hermes-notifier.svg)
+![hermes-notifier](./docs/blog-header.svg)
+
+<hr>
 
 **Hermes Agent 主动提醒与事项追踪插件**
 
@@ -109,3 +111,7 @@ hermes plugins doctor plugins/proactive --ci
 ## 关于作者
 
 由 [GuGuDaDaDa](https://github.com/GuGuDaDaDa) 与 [Aier](https://github.com/GuGuDaDaDa) 联合构建，专注于提供高可靠、低干扰的 Agent 生产级工程实践。
+
+## 社区
+
+欢迎来 [linux.do](https://linux.do/) 社区交流反馈。
