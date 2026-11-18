@@ -30,6 +30,8 @@ FIELD_LIMITS: dict[str, int] = {
     "worker_kind": 24,
     "purpose": 64,
     "schema": 64,
+    "provider": 64,
+    "env_ref": 96,
     "reason": 48,
     "duration_ms": 16,
     "source_count": 12,

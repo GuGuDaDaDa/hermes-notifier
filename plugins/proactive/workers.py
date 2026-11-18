@@ -18,6 +18,9 @@ from .schemas import WORKER1_OPPORTUNITIES_SCHEMA, WORKER2_PREPARED_SCHEMA
 WORKER_TEMPERATURE = 0.1
 DEFAULT_WORKER_TIMEOUT_SECONDS = 120.0
 SOURCE_RE = re.compile(r"\[source:(\d+)\]")
+# ``${VAR}`` / ``${env:VAR}`` — the shape config.yaml leaves verbatim when the
+# referenced variable is unset in the reading process.
+_ENV_REF_RE = re.compile(r"\$\{([^}]*)\}")
 _HOST_LLM: Any = None
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -131,9 +134,49 @@ def _resolve_llm(llm_client: Any) -> Any:
         return llm_client
     if _HOST_LLM is not None:
         return _HOST_LLM
+    # Only this branch builds a client outside the host's process — the standalone
+    # Cron bridge — so it is the only place where a ``${VAR}`` key reference can be
+    # left unexpanded because the child environment was stripped of the credential.
+    _require_resolved_credentials()
     from agent.plugin_llm import PluginLlm
 
     return PluginLlm(plugin_id="proactive")
+
+
+def _require_resolved_credentials() -> None:
+    """Raise when the main-model key is still an unexpanded ``${VAR}`` reference.
+
+    An unresolved reference is not a configuration hint: it is sent verbatim as the
+    API key, so the provider rejects it and the failure surfaces as an unexplained
+    authentication error several layers down. Naming the variable here keeps the
+    cause legible. Every other outcome — no key field, a real key, an unreadable
+    config — stays silent and lets the provider call report for itself.
+    """
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        config = load_config_readonly() or {}
+    except Exception:
+        return
+    model = config.get("model") if isinstance(config, Mapping) else None
+    api_key = str((model or {}).get("api_key") or "") if isinstance(model, Mapping) else ""
+    match = _ENV_REF_RE.search(api_key)
+    if match is None:
+        return
+    inner = match.group(1).strip()
+    name = inner[len("env:"):].strip() if inner.startswith("env:") else inner
+    provider = str((model or {}).get("provider") or "") if isinstance(model, Mapping) else ""
+    log.error(
+        log.logger("workers"),
+        "worker.auth_unresolved",
+        stage="stage2",
+        provider=provider,
+        env_ref=name,
+    )
+    raise RuntimeError(
+        f"main model credential is unresolved: config.yaml references ${{{name}}} "
+        f"but that variable is unset in this process; Stage 2 cannot authenticate"
+    )
 
 
 def _extract_non_interference(preferences: str) -> str:
