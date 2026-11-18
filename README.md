@@ -97,7 +97,7 @@ hermes proactive tick --force
 ## 开发与验证
 
 ```bash
-# 运行完整自动化测试（104 个用例）
+# 运行完整自动化测试（115 个用例）
 python3 -m unittest discover -s tests -v
 
 # 执行 Hermes 官方插件规范自检
